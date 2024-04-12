@@ -1,42 +1,56 @@
-import gymnasium as gym
-from gymnasium import spaces
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 import cv2
+import irobot_create_msgs.msg
+from irobot_create_msgs.msg import StopStatus
+import gymnasium as gym
+from gymnasium import spaces
 
 class CreateRedBallEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+    metadata = {"render_modes": [], "render_fps": 0}
     
     def __init__(self, render_mode=None):
         # Define observation space
-        self.observation_space = spaces.Discrete(10)  # Arbitrary discrete observation space
+        self.observation_space = spaces.Discrete(641)  # 0 to 640 pixels for x-axis
 
         # Define action space
-        self.action_space = spaces.Discrete(4)  # Arbitrary discrete action space
-
+        self.action_space = spaces.Discrete(641)  # 0 to 640 pixels for rotation
+        
         # Initialize ROS node
         rclpy.init()
 
         # Instantiate RedBall node
         self.redball = RedBall()
 
+        # Initialize episode step count
+        self.step_count = 0
+
     def reset(self, seed=None, options=None):
-        # Return the observation and an empty dictionary as info
-        return self.observation_space.sample(), {}
+        # Reset step count
+        self.step_count = 0
+        
+        # Return the most recent observation (x-axis pixel value)
+        return self.redball.redball_position, {}
 
     def step(self, action):
-        # Process ROS subscriptions
-        rclpy.spin_once(self.redball)
-
-        # Return any arbitrary next state, reward, done, and info
-        next_state = self.observation_space.sample()
-        reward = 0
-        done = False
-        info = {}
-        return next_state, reward, done, False, info
+        # Publish Twist message based on action
+        self.redball.set_twist_from_action(action)
+        
+        # Reset stop flag
+        self.redball.create3_is_stopped = False
+        
+        # Spin ROS until Create 3 stops moving
+        while not self.redball.create3_is_stopped:
+            rclpy.spin_once(self.redball)
+        
+        # Increment step count
+        self.step_count += 1
+        
+        # Return observation, reward, done, and info
+        return self.redball.redball_position, self.reward(self.redball.redball_position), self.step_count == 100, False, {"info": None}
 
     def render(self):
         # Do nothing for now
@@ -47,23 +61,56 @@ class CreateRedBallEnv(gym.Env):
         self.redball.destroy_node()
         rclpy.shutdown()
 
+    def reward(self, red_ball_position):
+        # Define the center of the image
+        image_center = 320
+        # Calculate the absolute distance between the current state and the image center
+        distance_to_center = abs(red_ball_position - image_center)
+        # Define the maximum reward
+        max_reward = 100.0
+        # Calculate the reward based on how close the current state is to the image center
+        reward = max_reward - distance_to_center
+        
+        return reward
+
+
 class RedBall(Node):
     """
-    A Node to analyse red balls in images and publish the results
+    A Node to analyze red balls in images and publish the results
     """
     def __init__(self):
         super().__init__('redball')
         self.subscription = self.create_subscription(
-          Image,
-          'custom_ns/camera1/image_raw',
-          self.listener_callback,
-          10)
-        self.subscription # prevent unused variable warning
+            Image,
+            'custom_ns/camera1/image_raw',
+            self.listener_callback,
+            10)
+        self.subscription  # prevent unused variable warning
 
         # A converter between ROS and OpenCV images
         self.br = CvBridge()
         self.target_publisher = self.create_publisher(Image, 'target_redball', 10)
         self.twist_publisher = self.create_publisher(Twist, 'cmd_vel', 10)
+
+        # Initialize red ball position
+        self.redball_position = 320  # Start from the middle
+
+        # Flag to track if Create 3 is stopped
+        self.create3_is_stopped = False
+        
+        
+        # Subscriber to stop status
+        self.stop_subscriber = self.create_subscription(
+            irobot_create_msgs.msg.StopStatus,
+            'stop_status',
+            self.stop_callback,
+            10)
+
+
+    def stop_callback(self, msg):
+        # Check if Create 3 is stopped
+        if msg.is_stopped:
+            self.create3_is_stopped = True
 
     def listener_callback(self, msg):
         frame = self.br.imgmsg_to_cv2(msg)
@@ -90,8 +137,13 @@ class RedBall(Node):
                 circled_orig = cv2.circle(frame, (int(circle[0]), int(circle[1])), int(circle[2]), (0,255,0),thickness=3)
                 the_circle = (int(circle[0]), int(circle[1]))
             self.target_publisher.publish(self.br.cv2_to_imgmsg(circled_orig))
+            self.get_logger().info('ball detected')
         else:
             self.get_logger().info('no ball detected')
 
-# Your Gymnasium environment main function or instantiation goes here
+    def set_twist_from_action(self, action):
+        # Translate action to Twist message
+        twist_msg = Twist()
+        twist_msg.angular.z = (action - 320) / 320 * (3.14 / 2)  # Convert to radians
+        self.twist_publisher.publish(twist_msg)
 

@@ -1,0 +1,3 @@
+source;share/aisd_examples/hook/pythonpath.ps1
+source;share/aisd_examples/hook/pythonpath.dsv
+source;share/aisd_examples/hook/pythonpath.sh

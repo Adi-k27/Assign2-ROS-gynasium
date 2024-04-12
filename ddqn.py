@@ -3,7 +3,7 @@ import gymnasium as gym
 import aisd_examples
 from stable_baselines3 import DQN
 # Create the environment with the BlocksWorld-v0 environment from aisd_examples
-env = gym.make("aisd_examples/BlockWorldSB", render_mode="human")
+env = gym.make("aisd_examples/CreateRedBall-v0", render_mode="human")
 # Initialize the DQN model with MultiInputPolicy for the environment
 model = DQN("MultiInputPolicy", env, verbose=1)
 model.learn(total_timesteps=10000, log_interval=4)

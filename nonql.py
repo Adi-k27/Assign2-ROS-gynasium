@@ -19,11 +19,17 @@ decay = 0.1
 episode_returns = []
 steps_per_episode = []
 
+# Define the maximum reward and the maximum allowed movement distance
+max_reward = 100.0
+max_movement = 50
 
 # Training loop
 for i in range(episodes):
-    state_box, info = env.reset()
-    state = state_box
+
+    # Get the current position of the red ball
+    red_ball_position, info = env.reset()
+    observation, info = 
+    state = observation
     steps = 0
     episode_return = 0
     done = False
@@ -31,35 +37,23 @@ for i in range(episodes):
     print("episode #", i+1, "/", episodes)
 
     while not done:
-        env.render()
-        time.sleep(0.05)
+    	# Calculate the distance from the red ball position to the center of the image
+    	distance_to_center = abs(observation - 320)
+    	# Calculate the reward based on the distance to the center
+    	reward = max_reward - distance_to_center
+    	# Limit the movement to only some amount
+    	if distance_to_center > max_movement:
+    	    # Determine the direction to move (left or right)
+    	    direction = -1 if observation < 320 else 1
+    	    # Move only by the maximum allowed movement amount
+    	    action = observation + direction * max_movement
+    	else: 
+    	    # Move to the center of the image
+    	    action = 320
 
-        # Increment steps
-        steps += 1
-        print(steps)
-
-        # Exploration-exploitation trade-off
-        if np.random.uniform() < epsilon:
-            action = env.action_space.sample()
-        else:
-            action = qtable[state].index(max(qtable[state]))
-            print(action)
-
-        # Take action
-        next_state_box, reward, done, _, info = env.step(action)
-        next_state = next_state_box
-        
-        print(next_state)
-
-        # Update Q-table using Bellman equation
-        qtable[state][action] = reward + gamma * max(qtable[next_state])
-
-        # Update state and episode return
-        state = next_state
-        episode_return += reward
-
-    # Decay epsilon
-    epsilon -= decay * epsilon
+    # Take the action in the environment
+    observation, _, terminated, _, _ = env.step(action)
+    episode_return += reward
 
     # Append episode return and steps per episode to lists
     episode_returns.append(episode_return)
