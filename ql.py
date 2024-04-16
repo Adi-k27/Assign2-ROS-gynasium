@@ -36,20 +36,16 @@ for i in range(episodes):
 
         # Increment steps
         steps += 1
-        print(steps)
 
         # Exploration-exploitation trade-off
         if np.random.uniform() < epsilon:
             action = env.action_space.sample()
         else:
             action = qtable[state].index(max(qtable[state]))
-            print(action)
 
         # Take action
         next_state_box, reward, done, _, info = env.step(action)
         next_state = next_state_box
-        
-        print(next_state)
 
         # Update Q-table using Bellman equation
         qtable[state][action] = reward + gamma * max(qtable[next_state])
@@ -57,6 +53,8 @@ for i in range(episodes):
         # Update state and episode return
         state = next_state
         episode_return += reward
+        print("rewards",reward)
+        print("total_rewards",episode_return)
 
     # Decay epsilon
     epsilon -= decay * epsilon
@@ -71,19 +69,13 @@ for i in range(episodes):
 
 # Plot episode returns and steps per episode
 plt.figure(figsize=(10, 5))
-plt.subplot(2, 1, 1)
 plt.plot(range(1, episodes + 1), episode_returns)
 plt.title('Episode Returns')
 plt.xlabel('Episode')
 plt.ylabel('Return')
 
-plt.subplot(2, 1, 2)
-plt.plot(range(1, episodes + 1), steps_per_episode)
-plt.title('Steps per Episode')
-plt.xlabel('Episode')
-plt.ylabel('Steps')
-
 plt.tight_layout()
+plt.savefig(f"ql.png")
 plt.show()
 
 env.close()

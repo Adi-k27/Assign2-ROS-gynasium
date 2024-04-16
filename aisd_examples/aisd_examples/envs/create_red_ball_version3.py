@@ -14,7 +14,7 @@ class CreateRedBallEnv(gym.Env):
     
     def __init__(self, render_mode=None):
         # Define observation space
-        self.observation_space = spaces.Discrete(640)  # 0 to 639 pixels for x-axis
+        self.observation_space = spaces.Discrete(641)  # 0 to 640 pixels for x-axis
 
         # Define action space
         self.action_space = spaces.Discrete(641)  # 0 to 640 pixels for rotation
@@ -48,6 +48,7 @@ class CreateRedBallEnv(gym.Env):
         # Spin ROS until Create 3 stops moving
         while not self.redball.create3_is_stopped:
             rclpy.spin_once(self.redball)
+            print(self.redball.redball_position)
         
         # Increment step count
         self.step_count += 1
@@ -69,18 +70,14 @@ class CreateRedBallEnv(gym.Env):
         image_center = 320
         # Calculate the absolute distance between the current state and the image center
         distance_to_center = abs(red_ball_position - image_center)
-        
+        print(red_ball_position)
         # Calculate the reward based on how close the current state is to the image center
-        if distance_to_center < 20:
-            reward = 10
-        elif distance_to_center < 150:
+        if distance_to_center < 16 :
             reward = 0
-        elif distance_to_center < 250:
+        elif distance_to_center < 200:
             reward = -1
-        elif distance_to_center < 400:
-            reward = -10
         else:
-            reward = -20
+            reward = - 10
             
         return reward
 
@@ -108,6 +105,7 @@ class RedBall(Node):
 
         # Flag to track if Create 3 is stopped
         self.create3_is_stopped = False
+        
         
         # Subscriber to stop status
         self.stop_subscriber = self.create_subscription(
@@ -141,13 +139,13 @@ class RedBall(Node):
 
         # on the color-masked, blurred and morphed image I apply the cv2.HoughCircles-method to detect circle-shaped objects
         detected_circles = cv2.HoughCircles(dilated_mask, cv2.HOUGH_GRADIENT, 1, 150, param1=100, param2=20, minRadius=2, maxRadius=2000)
+        the_circle = None
         if detected_circles is not None:
             for circle in detected_circles[0, :]:
-                self.redball_position = int(circle[0])  # Update red ball position
                 circled_orig = cv2.circle(frame, (int(circle[0]), int(circle[1])), int(circle[2]), (0,255,0),thickness=3)
-                self.target_publisher.publish(self.br.cv2_to_imgmsg(circled_orig))
-                self.get_logger().info('ball detected')
-                return  # Exit loop after first detected ball
+                the_circle = (int(circle[0]), int(circle[1]))
+            self.target_publisher.publish(self.br.cv2_to_imgmsg(circled_orig))
+            self.get_logger().info('ball detected')
         else:
             self.get_logger().info('no ball detected')
 
@@ -156,4 +154,3 @@ class RedBall(Node):
         twist_msg = Twist()
         twist_msg.angular.z = action # Convert to radians
         self.twist_publisher.publish(twist_msg)
-

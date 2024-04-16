@@ -8,13 +8,14 @@ import irobot_create_msgs.msg
 from irobot_create_msgs.msg import StopStatus
 import gymnasium as gym
 from gymnasium import spaces
+import numpy as np
 
 class CreateRedBallEnv(gym.Env):
     metadata = {"render_modes": [], "render_fps": 0}
     
     def __init__(self, render_mode=None):
         # Define observation space
-        self.observation_space = spaces.Discrete(640)  # 0 to 639 pixels for x-axis
+        self.observation_space = spaces.Discrete(641)  # 0 to 640 pixels for x-axis
 
         # Define action space
         self.action_space = spaces.Discrete(641)  # 0 to 640 pixels for rotation
@@ -27,6 +28,9 @@ class CreateRedBallEnv(gym.Env):
 
         # Initialize episode step count
         self.step_count = 0
+
+        # Flag to indicate if the ball has been initially detected
+        self.ball_initially_detected = False
 
     def reset(self, seed=None, options=None):
         # Reset step count
@@ -45,15 +49,34 @@ class CreateRedBallEnv(gym.Env):
         # Reset stop flag
         self.redball.create3_is_stopped = False
         
-        # Spin ROS until Create 3 stops moving
-        while not self.redball.create3_is_stopped:
+        # Spin ROS until Create 3 stops moving or a certain time has elapsed
+        max_rotation_steps = 400
+        rotation_steps = 0
+        while not self.redball.create3_is_stopped and rotation_steps < max_rotation_steps:
             rclpy.spin_once(self.redball)
+            rotation_steps += 1
+        
+        # Check if the ball is detected
+        ball_detected = self.redball.ball_detected
+        
+        # If the ball was initially undetected, rotate the robot to search for it
+        if not self.ball_initially_detected and not ball_detected:
+            rotation_angle = np.random.uniform(-1, 1) * (3.14 / 2)
+            self.redball.set_twist_from_action(rotation_angle)
+            # Reset step count
+            self.step_count = 0
+            # Increment rotation steps
+            rotation_steps = 0
+            while not self.redball.create3_is_stopped and rotation_steps < max_rotation_steps:
+                rclpy.spin_once(self.redball)
+                rotation_steps += 1
+            ball_detected = self.redball.ball_detected
         
         # Increment step count
         self.step_count += 1
         
         # Return observation, reward, done, and info
-        return self.redball.redball_position, self.reward(self.redball.redball_position), self.step_count == 100, False, {"info": None}
+        return self.redball.redball_position, self.reward(ball_detected), self.step_count == 100, False, {"info": None}
 
     def render(self):
         # Do nothing for now
@@ -64,25 +87,13 @@ class CreateRedBallEnv(gym.Env):
         self.redball.destroy_node()
         rclpy.shutdown()
 
-    def reward(self, red_ball_position):
-        # Define the center of the image
-        image_center = 320
-        # Calculate the absolute distance between the current state and the image center
-        distance_to_center = abs(red_ball_position - image_center)
-        
-        # Calculate the reward based on how close the current state is to the image center
-        if distance_to_center < 20:
-            reward = 10
-        elif distance_to_center < 150:
-            reward = 0
-        elif distance_to_center < 250:
-            reward = -1
-        elif distance_to_center < 400:
-            reward = -10
+    def reward(self, ball_detected):
+        if ball_detected:
+            # Positive reward when the ball is detected
+            return 100
         else:
-            reward = -20
-            
-        return reward
+            # Negative reward when the ball is not detected
+            return -1
 
 
 class RedBall(Node):
@@ -109,13 +120,15 @@ class RedBall(Node):
         # Flag to track if Create 3 is stopped
         self.create3_is_stopped = False
         
+        # Flag to track if the ball is detected
+        self.ball_detected = False
+        
         # Subscriber to stop status
         self.stop_subscriber = self.create_subscription(
             irobot_create_msgs.msg.StopStatus,
             'stop_status',
             self.stop_callback,
             10)
-
 
     def stop_callback(self, msg):
         # Check if Create 3 is stopped
@@ -141,14 +154,17 @@ class RedBall(Node):
 
         # on the color-masked, blurred and morphed image I apply the cv2.HoughCircles-method to detect circle-shaped objects
         detected_circles = cv2.HoughCircles(dilated_mask, cv2.HOUGH_GRADIENT, 1, 150, param1=100, param2=20, minRadius=2, maxRadius=2000)
+        the_circle = None
         if detected_circles is not None:
             for circle in detected_circles[0, :]:
-                self.redball_position = int(circle[0])  # Update red ball position
                 circled_orig = cv2.circle(frame, (int(circle[0]), int(circle[1])), int(circle[2]), (0,255,0),thickness=3)
-                self.target_publisher.publish(self.br.cv2_to_imgmsg(circled_orig))
-                self.get_logger().info('ball detected')
-                return  # Exit loop after first detected ball
+                the_circle = (int(circle[0]), int(circle[1]))
+                self.ball_detected = True
+            self.target_publisher.publish(self.br.cv2_to_imgmsg(circled_orig))
+            self.ball_initially_detected = True  # Set the flag to True when the ball is first detected
+            self.get_logger().info('ball detected')
         else:
+            self.ball_detected = False
             self.get_logger().info('no ball detected')
 
     def set_twist_from_action(self, action):

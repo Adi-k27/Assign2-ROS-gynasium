@@ -1,52 +1,78 @@
-import gymnasium as gym
 import numpy as np
-import aisd_examples
+import time
+import os
 import matplotlib.pyplot as plt
+import gymnasium as gym
+import aisd_examples
 
+# Create the environment
 env = gym.make("aisd_examples/CreateRedBall-v0", render_mode="human")
-observation, info = env.reset()
 
+# Hyperparameters
+episodes = 20
+gamma = 0.1
+epsilon = 0.08
+decay = 0.1
+
+# To store episode returns and steps per episode
 episode_returns = []
-episode_return = 0
+steps_per_episode = []
 
-# Define the maximum reward and the maximum allowed movement distance
-max_reward = 100.0
-max_movement = 50 
+# Training loop
+for i in range(episodes):
+    # Get the initial observation from the environment
+    observation, info = env.reset()
+    state = observation
+    steps = 0
+    episode_return = 0
+    done = False
+    
+    print("Episode #", i+1, "/", episodes)
 
+    while not done:
+        # Render the environment (optional)
+        env.render()
+        time.sleep(0.05)
 
-for _ in range(1000):
-    terminated = False
-    # Null agent's action choice based on a heuristic
-    while not terminated:
-    	# Calculate the distance from the red ball position to the center of the image
-    	distance_to_center = abs(observation - 320)
-    	# Calculate the reward based on the distance to the center
-    	reward = max_reward - distance_to_center
-    	# Limit the movement to only some amount
-    	if distance_to_center > max_movement:
-    	    # Determine the direction to move (left or right)
-    	    direction = -1 if observation < 320 else 1
-    	    # Move only by the maximum allowed movement amount
-    	    action = observation + direction * max_movement
-    	else: 
-    	    # Move to the center of the image
-    	    action = 320
+        # Increment steps
+        steps += 1
 
-    observation, reward, terminated, truncated, info = env.step(action)
-    episode_return += reward
+        # Calculate the distance from the red ball position to the center of the image
+        distance_to_center = abs(observation - 320)
 
-    # If episode terminates or truncates, reset and log episode return
-    if terminated or truncated:
-        observation, info = env.reset()
-        episode_returns.append(episode_return)
-        episode_return = 0
+        # Choose action based on the distance to the ball position
+        if distance_to_center < 100:  # Move towards the ball if it's within a certain range
+            action = observation + 50
+        elif distance_to_center < 200:  # Move towards the ball if it's within a certain range
+            action = observation + 150
+        else:  # Move towards the center of the image if the ball is far away
+            action = 350
 
-env.close()
+        # Take the action in the environment
+        next_state_box, reward, done, _, info = env.step(action)
+        next_state = next_state_box
 
-# Plot episode returns
-plt.plot(episode_returns)
+        # Update state and episode return
+        state = next_state
+        episode_return += reward
+
+    # Append episode return and steps per episode to lists
+    episode_returns.append(episode_return)
+    steps_per_episode.append(steps)
+
+    print("\nDone in", steps, "steps")
+    print("Episode return:", episode_return)
+
+# Plot episode returns and steps per episode
+plt.figure(figsize=(10, 5))
+plt.plot(range(1, episodes + 1), episode_returns)
 plt.title('Episode Returns')
 plt.xlabel('Episode')
 plt.ylabel('Return')
+
+plt.tight_layout()
+plt.savefig(f"nonrl.png")
 plt.show()
+
+env.close()
 
